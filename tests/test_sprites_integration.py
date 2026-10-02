@@ -217,3 +217,80 @@ class TestEndToEndIntegration:
             env.cleanup()
             refetched = client.get_sprite(unique_name)
             assert refetched is not None
+
+
+# ------------------------------------------------------------------ #
+#  Nix bootstrap provision                                            #
+# ------------------------------------------------------------------ #
+
+class TestNixBootstrapIntegration:
+    """Provision a sprite with the Nix installer and verify it works.
+
+    Exercises the .hermes.md bootstrap procedure end-to-end: install
+    Determinate Nix with --init none, fix /nix ownership, and verify
+    `nix --version` runs inside the sprite.
+    """
+
+    NIX_INSTALL_SCRIPT = """set -euo pipefail
+
+# Install Determinate Nix (single-user, no daemon — sprites have no systemd).
+curl -fsSL https://install.determinate.systems/nix | sh -s -- install linux --init none --no-confirm
+
+# The installer runs as root via sudo; fix ownership so the sprite user owns /nix.
+sudo chown -R "$(whoami)" /nix
+
+# Put nix on PATH for this shell and persist for fish.
+export PATH="/nix/var/nix/profiles/default/bin:$PATH"
+echo 'set -x PATH /nix/var/nix/profiles/default/bin $PATH' >> ~/.config/fish/config.fish
+
+# Verify.
+nix --version
+"""
+
+    def test_nix_installs_and_runs(self, client, unique_name, cleanup_sprite):
+        from sprites_environment import SpritesEnvironment
+
+        cleanup_sprite.append(unique_name)
+
+        with patch("sprites_environment._resolve_sprite_name", return_value=unique_name):
+            with patch("sprites_environment._resolve_profile_identity", return_value=None):
+                env = SpritesEnvironment(
+                    cwd="/root",
+                    timeout=300,
+                    persistent_filesystem=True,
+                    task_id=unique_name,
+                    labels=["nix-test", "hermes"],
+                    auto_tags=False,
+                    provision_inline=self.NIX_INSTALL_SCRIPT,
+                    provision_best_effort=False,
+                    provision_timeout=300,
+                )
+
+        try:
+            # Provisioning ran during __init__; verify nix is available.
+            cmd = env._sprite.command(
+                "bash", "-lc",
+                "export PATH=/nix/var/nix/profiles/default/bin:$PATH && nix --version",
+                timeout=30,
+            )
+            output = cmd.combined_output().decode().strip()
+            assert "nix" in output.lower(), f"nix --version output: {output}"
+
+            # Verify the fish config line was appended.
+            cmd = env._sprite.command(
+                "bash", "-c",
+                "grep 'nix/var/nix/profiles/default/bin' ~/.config/fish/config.fish",
+                timeout=10,
+            )
+            fish_output = cmd.combined_output().decode().strip()
+            assert "nix/var/nix/profiles/default/bin" in fish_output, \
+                f"fish config not updated: {fish_output}"
+
+            # Verify the .provisioned marker exists (provisioning completed).
+            marker_cmd = env._sprite.command(
+                "bash", "-c", "cat /root/.hermes/.provisioned", timeout=10,
+            )
+            marker = marker_cmd.combined_output().decode().strip()
+            assert "provisioned" in marker
+        finally:
+            env.cleanup()
