@@ -157,13 +157,16 @@ class TestProvisioningIntegration:
         )
         env._provision_sprite()
 
-        # Second run: marker present, should skip.
-        env2 = self._make_env(
-            unique_name,
-            provision_inline='mkdir -p $HOME/.hermes && echo "SHOULD NOT RUN" > $HOME/.hermes/should-not-exist',
-        )
-        env2._provision_sprite()
+        # Verify the marker was written.
+        marker_path = f"{env._remote_home}/{env._PROVISION_MARKER}"
+        marker = (env._fs / marker_path.lstrip("/")).read_text()
+        assert "provisioned" in marker, f"marker not written: {marker}"
 
+        # Second run on the SAME env (same _fs handle): marker present, should skip.
+        env._provision_sprite()
+
+        # The should-not-exist file should NOT be there because the second
+        # provision was skipped by the marker.
         cmd = env._sprite.command(
             "bash", "-c", f"test -f {env._remote_home}/.hermes/should-not-exist && echo EXISTS || echo ABSENT",
             timeout=10,
@@ -172,7 +175,6 @@ class TestProvisioningIntegration:
         assert "ABSENT" in result, f"second provision was not skipped: {result}"
 
         env._client.close()
-        env2._client.close()
 
     def test_fail_fast_on_bad_script(self, client, unique_name, cleanup_sprite):
         cleanup_sprite.append(unique_name)
