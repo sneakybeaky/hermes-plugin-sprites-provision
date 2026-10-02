@@ -98,8 +98,11 @@ class SpritesProvider(TerminalEnvironmentProvider):
         logger = logging.getLogger(__name__)
         if not _sdk_installed():
             logger.error(
-                "sprites-py is required for the Sprites terminal backend: "
-                "pip install '%s'", _SPRITES_SPEC,
+                "sprites-py SDK is required. On hosted Hermes (read-only venv), install with:\n"
+                "  uv pip install --python /opt/hermes/.venv/bin/python3 "
+                "--target /opt/data/.hermes/python-packages --no-deps '%s'\n"
+                "Then ensure PYTHONPATH includes /opt/data/.hermes/python-packages in /opt/data/.env",
+                _SPRITES_SPEC,
             )
             return False
         if not _get_token():
@@ -124,11 +127,26 @@ class SpritesProvider(TerminalEnvironmentProvider):
         return [
             "Stateful cloud sandboxes on Fly.io, with checkpoint & restore.",
             "Sprites persist between sessions and are reused by task_id.",
-            "Sign up at: https://sprites.dev",
-            "Get a token with: sprite login  (or `sprite auth setup --token ...`)",
+            "",
+            "Install the sprites-py SDK (v0.7+ required for labels/update):",
+            "  uv pip install --python /opt/hermes/.venv/bin/python3",
+            "    --target /opt/data/.hermes/python-packages --no-deps",
+            "    'sprites-py>=0.7.0,<0.8'",
+            "Add to /opt/data/.env:",
+            "  PYTHONPATH=/opt/data/.hermes/python-packages:/opt/data/plugins/sprites",
+            "",
+            "Get a token at: https://sprites.dev/account",
             "Tip: mint a Restricted Token with prefix=hermes to scope it to",
             "     hermes-* sprites only. Recommended for CI / shared use.",
-            "Save it in ~/.hermes/.env as SPRITES_TOKEN.",
+            "Save it in /opt/data/.env as SPRITES_TOKEN.",
+            "Set backend: hermes config set terminal.backend sprites",
+            "",
+            "Optional tagging/provisioning config (in config.yaml):",
+            "  terminal.sprites.tags: ['prod', 'web']",
+
+            "  terminal.sprites.auto_tags: true",
+            "  terminal.sprites.provision_script: /path/to/provision.sh",
+            "",
             "Note: Sprites allocates compute dynamically (up to 8 CPU / 16 GB RAM).",
         ]
 
