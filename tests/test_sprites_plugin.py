@@ -135,6 +135,49 @@ class TestReconcileLabels:
 
 
 # ------------------------------------------------------------------ #
+#  Working-directory resolution                                       #
+# ------------------------------------------------------------------ #
+
+class TestResolveCwd:
+    """_resolve_cwd: fall back to remote home when host cwd is absent."""
+
+    def _make_env(self, sprite=None):
+        from sprites_environment import SpritesEnvironment
+        env = SpritesEnvironment.__new__(SpritesEnvironment)
+        env._sprite = sprite or MagicMock()
+        return env
+
+    def test_tilde_rewrites_to_home(self):
+        env = self._make_env()
+        assert env._resolve_cwd("~", "/home/sprite") == "/home/sprite"
+        env._sprite.command.assert_not_called()
+
+    def test_root_rewrites_to_home(self):
+        env = self._make_env()
+        assert env._resolve_cwd("/root", "/home/sprite") == "/home/sprite"
+        env._sprite.command.assert_not_called()
+
+    def test_existing_dir_kept(self):
+        env = self._make_env()
+        cmd_mock = MagicMock()
+        cmd_mock.combined_output.return_value = b"yes\n"
+        env._sprite.command.return_value = cmd_mock
+        assert env._resolve_cwd("/opt/data", "/home/sprite") == "/opt/data"
+
+    def test_missing_dir_falls_back_to_home(self):
+        env = self._make_env()
+        cmd_mock = MagicMock()
+        cmd_mock.combined_output.return_value = b""
+        env._sprite.command.return_value = cmd_mock
+        assert env._resolve_cwd("/opt/data", "/home/sprite") == "/home/sprite"
+
+    def test_probe_failure_falls_back_to_home(self):
+        env = self._make_env()
+        env._sprite.command.side_effect = Exception("websocket down")
+        assert env._resolve_cwd("/opt/data", "/home/sprite") == "/home/sprite"
+
+
+# ------------------------------------------------------------------ #
 #  Provisioning                                                       #
 # ------------------------------------------------------------------ #
 

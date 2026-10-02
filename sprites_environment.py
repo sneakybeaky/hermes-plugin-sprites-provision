@@ -363,8 +363,7 @@ class SpritesEnvironment(BaseEnvironment):
             home = cmd.combined_output().decode().strip()
             if home:
                 self._remote_home = home
-                if requested_cwd in {"~", "/root"}:
-                    self.cwd = home
+                self.cwd = self._resolve_cwd(requested_cwd, home)
         except Exception:
             pass
 
@@ -383,6 +382,43 @@ class SpritesEnvironment(BaseEnvironment):
             self._provision_sprite()
 
         self.init_session()
+
+    # ------------------------------------------------------------------
+    # Working-directory resolution
+    # ------------------------------------------------------------------
+
+    def _resolve_cwd(self, requested_cwd: str, remote_home: str) -> str:
+        """Return the cwd to use inside the sprite.
+
+        Hermes passes the *host* working directory as ``cwd`` (e.g. ``/opt/data``
+        on a Nous portal install, or the user's local project dir).  That path
+        almost never exists inside the sprite VM, so every ``cd $cwd && ...``
+        would fail with "directory not found".
+
+        Probe the sprite's filesystem and fall back to the remote home when
+        the requested cwd is absent.  ``~`` and ``/root`` are always rewritten
+        to the remote home (they're host-side aliases, not sprite paths).
+        """
+        if requested_cwd in {"~", "/root"}:
+            return remote_home
+        try:
+            probe = self._sprite.command(
+                "bash", "-c",
+                f"test -d {shlex.quote(requested_cwd)} && echo yes",
+                timeout=15,
+            )
+            if probe.combined_output().decode().strip() == "yes":
+                return requested_cwd
+            logger.info(
+                "Sprites: requested cwd %s does not exist in the sprite; "
+                "falling back to %s",
+                requested_cwd, remote_home,
+            )
+            return remote_home
+        except Exception:
+            # If the probe itself fails, fall back to the remote home rather
+            # than leaving the agent pointed at a non-existent directory.
+            return remote_home
 
     # ------------------------------------------------------------------
     # File sync callbacks
