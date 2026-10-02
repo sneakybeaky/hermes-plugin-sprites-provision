@@ -1,7 +1,7 @@
 name: sprites
 version: 1.2.0
 manifest_version: 2
-description: Sprites terminal backend with checkpoint & restore, tagging, and first-creation provisioning
+description: Sprites terminal backend with checkpoint & restore, tagging, and first-creation provisioning (provisioned fork)
 author: Jon Barber (@sneakybeaky)
 kind: backend
 requires_env:

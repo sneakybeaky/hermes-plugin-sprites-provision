@@ -86,7 +86,7 @@ class SpritesProvider(TerminalEnvironmentProvider):
     _plugin_provision_timeout: "int | None" = None
 
     name = "sprites"
-    display_name = "Sprites"
+    display_name = "Sprites Provisioned"
     is_remote = True
     is_container = True
     # A durable Sprite is resumed BY NAME; under container_persistent: false
