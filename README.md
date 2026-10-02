@@ -27,24 +27,39 @@ echo 'SPRITES_TOKEN=...' >> ~/.hermes/.env
 
 ## Configuration
 
-All plugin-specific settings live under the `terminal.sprites` section of `config.yaml`:
+Plugin-specific settings live under `plugins.entries.sprites.settings` in `config.yaml`.
+This is the Hermes-managed namespace for plugin config — it survives config-editor round-trips,
+appears in the Desktop Plugins settings form, and can be set via `hermes config set`.
 
 ```yaml
-terminal:
-  backend: sprites
-  sprites:
-    # --- Tagging ---
-    tags: ["prod", "web"]         # static labels attached to every sprite
-    auto_tags: true               # auto-derive: hermes, task-{slug}, profile-{slug}
+plugins:
+  entries:
+    sprites:
+      settings:
+        # --- Tagging ---
+        tags: ["prod", "web"]       # static labels attached to every sprite
+        auto_tags: true             # auto-derive: hermes, task-{slug}, profile-{slug}
 
-    # --- First-creation provisioning ---
-    provision_script: /path/to/provision.sh   # host-side script to run on first creation
-    # provision_inline: |                      # ...or inline script
-    #   echo "provisioning..."
-    #   apt-get install -y git
-    provision_best_effort: false  # false = fail-fast (default), true = log warning on failure
-    provision_timeout: 600        # seconds (default 600)
+        # --- First-creation provisioning ---
+        provision_script: /path/to/provision.sh   # host-side script (mutually exclusive with provision_inline)
+        # provision_inline: |                      # ...or inline script
+        #   set -euo pipefail
+        #   echo "provisioning..."
+        #   apt-get install -y git
+        provision_best_effort: false  # false = fail-fast (default), true = log warning on failure
+        provision_timeout: 600        # seconds (default 600)
 ```
+
+Or set individual values without editing the file:
+
+```bash
+hermes config set plugins.entries.sprites.settings.tags '["prod", "web"]'
+hermes config set plugins.entries.sprites.settings.auto_tags true
+hermes config set plugins.entries.sprites.settings.provision_timeout 300
+```
+
+> **Note on `provision_inline`:** the Desktop settings form renders this as a text input.
+> For multi-line scripts, edit `config.yaml` directly and use a YAML block scalar (`|`).
 
 ### Tagging
 

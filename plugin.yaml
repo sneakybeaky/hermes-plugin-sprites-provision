@@ -1,10 +1,14 @@
 name: sprites
-version: 1.1.0
+version: 1.2.0
+manifest_version: 2
 description: Sprites terminal backend with checkpoint & restore, tagging, and first-creation provisioning
 author: Jon Barber (@sneakybeaky)
 kind: backend
 requires_env:
-  - SPRITES_TOKEN
+  - name: SPRITES_TOKEN
+    description: "Sprites API token — get one at sprites.dev/account. A Restricted Token with prefix=hermes is recommended for CI/shared use."
+    url: "https://sprites.dev/account"
+    secret: true
 python_deps:
   - spec: sprites-py>=0.7.0,<0.8
     install_hint: |
@@ -23,6 +27,38 @@ post_install: |
      or rely on PYTHONPATH in .env -- the runtime does not read it.
   2. Set SPRITES_TOKEN in /opt/data/.env (get one at sprites.dev/account).
   3. Run: hermes config set terminal.backend sprites
-  4. Optional: configure terminal.sprites.* in config.yaml for tags/provisioning.
+  4. Optional: configure plugin settings via `hermes config set` or the Desktop
+     Plugins settings form (see config_schema below).
   5. Restart Hermes from the Nous portal (or start a new session) so
      activate_durable_lazy_target() picks up the SDK.
+config_schema:
+  tags:
+    type: list
+    default: []
+    label: "Tags"
+    description: "Static labels attached to every sprite at creation time"
+  auto_tags:
+    type: bool
+    default: false
+    label: "Auto-tags"
+    description: "Auto-derive hermes, task-{slug}, and profile-{slug} labels from the active task and profile"
+  provision_script:
+    type: str
+    default: ""
+    label: "Provision script path"
+    description: "Absolute path (on the Hermes host) to a shell script to run inside the sprite on first creation only. Mutually exclusive with provision_inline."
+  provision_inline:
+    type: str
+    default: ""
+    label: "Provision inline script"
+    description: "Inline shell script to run inside the sprite on first creation only. Mutually exclusive with provision_script. Use a YAML block scalar (|) in config.yaml for multi-line scripts."
+  provision_best_effort:
+    type: bool
+    default: false
+    label: "Provisioning best-effort"
+    description: "If true, log a warning on provisioning failure and continue. If false (default), raise on failure so a half-provisioned sprite is never reported ready."
+  provision_timeout:
+    type: int
+    default: 600
+    label: "Provisioning timeout (seconds)"
+    description: "Maximum time in seconds to wait for the provisioning script to complete"

@@ -54,8 +54,36 @@ def _get_token() -> Optional[str]:
         return os.getenv("SPRITES_TOKEN") or os.getenv("SPRITE_TOKEN")
 
 
+def _normalise_tags(raw):
+    """Coerce *raw* (list, JSON string, CSV string, or None) to list-or-None."""
+    if raw is None:
+        return None
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, str):
+        import json as _json
+        try:
+            parsed = _json.loads(raw)
+            if isinstance(parsed, list):
+                return parsed
+        except (ValueError, TypeError):
+            pass
+        return [t.strip() for t in raw.split(",") if t.strip()]
+    return None
+
+
 class SpritesProvider(TerminalEnvironmentProvider):
     """Sprites — stateful cloud sandboxes on Fly.io."""
+
+    # _plugin_* attributes hold settings read from plugins.entries.sprites.settings.*
+    # via ctx.get_config() in register().  None means "not configured via plugin
+    # settings" — fall through to terminal.sprites.* for backwards compat.
+    _plugin_labels: "list | None" = None
+    _plugin_auto_tags: "bool | None" = None
+    _plugin_provision_script: "str | None" = None
+    _plugin_provision_inline: "str | None" = None
+    _plugin_provision_best_effort: "bool | None" = None
+    _plugin_provision_timeout: "int | None" = None
 
     name = "sprites"
     display_name = "Sprites"
@@ -195,11 +223,51 @@ class SpritesProvider(TerminalEnvironmentProvider):
             from sprites_environment import SpritesEnvironment
 
         cc = container_config or {}
-        # terminal.sprites.* config subsection (falls back to flat keys
-        # in container_config for older config-bridge versions).
+        # terminal.sprites.* is kept for backwards compatibility.  The
+        # authoritative config path is plugins.entries.sprites.settings.*
+        # (declared in config_schema and read via ctx.get_config in register()),
+        # stored as _plugin_* attributes.  Plugin settings survive config-editor
+        # round-trips; terminal.sprites.* may be stripped by the Hermes config
+        # editor for keys not in the terminal config schema.
         sc = cc.get("sprites", {})
-        tags = sc.get("tags") or cc.get("sprites_tags")
-        auto_tags = sc.get("auto_tags", cc.get("sprites_auto_tags", False))
+
+        # --- labels / tags ---
+        # Plugin settings win; fall back to terminal.sprites.tags or the flat
+        # sprites_tags key used by older config-bridge versions.
+        if self._plugin_labels is not None:
+            tags = self._plugin_labels
+        else:
+            raw_tags = sc["tags"] if "tags" in sc else cc.get("sprites_tags")
+            tags = _normalise_tags(raw_tags)
+
+        # --- auto_tags ---
+        if self._plugin_auto_tags is not None:
+            auto_tags = self._plugin_auto_tags
+        else:
+            auto_tags = sc.get("auto_tags", cc.get("sprites_auto_tags", False))
+
+        # --- provisioning ---
+        provision_script = (
+            self._plugin_provision_script
+            if self._plugin_provision_script is not None
+            else (sc.get("provision_script") or cc.get("sprites_provision_script"))
+        )
+        provision_inline = (
+            self._plugin_provision_inline
+            if self._plugin_provision_inline is not None
+            else (sc.get("provision_inline") or cc.get("sprites_provision_inline"))
+        )
+        if self._plugin_provision_best_effort is not None:
+            provision_best_effort = self._plugin_provision_best_effort
+        else:
+            provision_best_effort = sc.get(
+                "provision_best_effort", cc.get("sprites_provision_best_effort", False)
+            )
+        provision_timeout = (
+            self._plugin_provision_timeout
+            if self._plugin_provision_timeout is not None
+            else sc.get("provision_timeout", cc.get("sprites_provision_timeout", 600))
+        )
 
         return SpritesEnvironment(
             cwd=cwd,
@@ -208,12 +276,37 @@ class SpritesProvider(TerminalEnvironmentProvider):
             task_id=task_id,
             labels=tags,
             auto_tags=auto_tags,
-            provision_script=sc.get("provision_script") or cc.get("sprites_provision_script"),
-            provision_inline=sc.get("provision_inline") or cc.get("sprites_provision_inline"),
-            provision_best_effort=sc.get("provision_best_effort", cc.get("sprites_provision_best_effort", False)),
-            provision_timeout=sc.get("provision_timeout", cc.get("sprites_provision_timeout", 600)),
+            provision_script=provision_script,
+            provision_inline=provision_inline,
+            provision_best_effort=provision_best_effort,
+            provision_timeout=provision_timeout,
         )
 
 
 def register(ctx):
-    ctx.register_terminal_environment_provider(SpritesProvider())
+    provider = SpritesProvider()
+
+    # Read plugin settings from plugins.entries.sprites.settings.* via
+    # ctx.get_config().  These are declared in config_schema (plugin.yaml v2)
+    # and are preserved by the Hermes config editor; unlike terminal.sprites.*
+    # they survive a config round-trip.  Store them on the provider so
+    # create_environment() can use them without needing ctx at call time.
+    raw_tags = ctx.get_config("tags", default=None)
+    provider._plugin_labels = _normalise_tags(raw_tags) if raw_tags is not None else None
+
+    val = ctx.get_config("auto_tags", default=None)
+    provider._plugin_auto_tags = bool(val) if val is not None else None
+
+    val = ctx.get_config("provision_script", default=None)
+    provider._plugin_provision_script = str(val) if val else None
+
+    val = ctx.get_config("provision_inline", default=None)
+    provider._plugin_provision_inline = str(val) if val else None
+
+    val = ctx.get_config("provision_best_effort", default=None)
+    provider._plugin_provision_best_effort = bool(val) if val is not None else None
+
+    val = ctx.get_config("provision_timeout", default=None)
+    provider._plugin_provision_timeout = int(val) if val is not None else None
+
+    ctx.register_terminal_environment_provider(provider)

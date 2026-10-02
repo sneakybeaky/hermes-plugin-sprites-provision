@@ -241,6 +241,69 @@ class TestProvisioning:
 class TestProviderConfig:
     """SpritesProvider.create_environment threads sprites config correctly."""
 
+    def _make_provider(self, plugin_settings=None):
+        """Build a SpritesProvider with _plugin_* attrs set as if register() ran."""
+        import importlib
+        provider_mod = importlib.import_module("__init__")
+        provider = provider_mod.SpritesProvider()
+        if plugin_settings:
+            normalise = provider_mod._normalise_tags
+            raw = plugin_settings.get("tags")
+            provider._plugin_labels = normalise(raw) if raw is not None else None
+            val = plugin_settings.get("auto_tags")
+            provider._plugin_auto_tags = bool(val) if val is not None else None
+            val = plugin_settings.get("provision_script")
+            provider._plugin_provision_script = str(val) if val else None
+            val = plugin_settings.get("provision_inline")
+            provider._plugin_provision_inline = str(val) if val else None
+            val = plugin_settings.get("provision_best_effort")
+            provider._plugin_provision_best_effort = bool(val) if val is not None else None
+            val = plugin_settings.get("provision_timeout")
+            provider._plugin_provision_timeout = int(val) if val is not None else None
+        return provider
+
+    def test_plugin_settings_win_over_terminal_sprites(self):
+        """Settings from plugins.entries.sprites.settings.* take priority."""
+        provider = self._make_provider({"tags": ["plugin-tag"], "auto_tags": True})
+        with patch("sprites_environment.SpritesEnvironment") as mock_env:
+            provider.create_environment(
+                cwd="/root", timeout=60, task_id="test",
+                container_config={"sprites": {"tags": ["ignored"], "auto_tags": False}},
+            )
+        kw = mock_env.call_args.kwargs
+        assert kw["labels"] == ["plugin-tag"]
+        assert kw["auto_tags"] is True
+
+    def test_plugin_provision_settings_win_over_terminal_sprites(self):
+        provider = self._make_provider({
+            "provision_script": "/plugin/script.sh",
+            "provision_best_effort": True,
+            "provision_timeout": 120,
+        })
+        with patch("sprites_environment.SpritesEnvironment") as mock_env:
+            provider.create_environment(
+                cwd="/root", timeout=60, task_id="test",
+                container_config={"sprites": {
+                    "provision_script": "/ignored.sh",
+                    "provision_best_effort": False,
+                    "provision_timeout": 999,
+                }},
+            )
+        kw = mock_env.call_args.kwargs
+        assert kw["provision_script"] == "/plugin/script.sh"
+        assert kw["provision_best_effort"] is True
+        assert kw["provision_timeout"] == 120
+
+    def test_plugin_false_auto_tags_not_overridden_by_terminal(self):
+        """Explicitly configured False in plugin settings must not fall through."""
+        provider = self._make_provider({"auto_tags": False})
+        with patch("sprites_environment.SpritesEnvironment") as mock_env:
+            provider.create_environment(
+                cwd="/root", timeout=60, task_id="test",
+                container_config={"sprites": {"auto_tags": True}},
+            )
+        assert mock_env.call_args.kwargs["auto_tags"] is False
+
     def test_threads_labels_from_sprites_subsection(self):
         import importlib
         provider_mod = importlib.import_module("__init__")
@@ -288,6 +351,57 @@ class TestProviderConfig:
         call_kwargs = mock_env.call_args.kwargs
         assert call_kwargs["labels"] == ["dev"]
         assert call_kwargs["persistent_filesystem"] is False
+
+    def test_empty_tags_list_is_preserved_not_fallen_through(self):
+        """An explicit tags: [] must not fall through to the flat-key fallback."""
+        import importlib
+        provider_mod = importlib.import_module("__init__")
+        provider = provider_mod.SpritesProvider()
+
+        with patch("sprites_environment.SpritesEnvironment") as mock_env:
+            provider.create_environment(
+                cwd="/root",
+                timeout=60,
+                task_id="test",
+                container_config={
+                    "sprites": {"tags": []},
+                    "sprites_tags": ["should-not-appear"],
+                },
+            )
+        call_kwargs = mock_env.call_args.kwargs
+        assert call_kwargs["labels"] == []
+
+    def test_string_tags_json_parsed(self):
+        """tags passed as a JSON string (e.g. from hermes config set) are parsed."""
+        import importlib
+        provider_mod = importlib.import_module("__init__")
+        provider = provider_mod.SpritesProvider()
+
+        with patch("sprites_environment.SpritesEnvironment") as mock_env:
+            provider.create_environment(
+                cwd="/root",
+                timeout=60,
+                task_id="test",
+                container_config={"sprites": {"tags": '["prod", "web"]'}},
+            )
+        call_kwargs = mock_env.call_args.kwargs
+        assert call_kwargs["labels"] == ["prod", "web"]
+
+    def test_string_tags_csv_parsed(self):
+        """tags passed as a comma-separated string are split into a list."""
+        import importlib
+        provider_mod = importlib.import_module("__init__")
+        provider = provider_mod.SpritesProvider()
+
+        with patch("sprites_environment.SpritesEnvironment") as mock_env:
+            provider.create_environment(
+                cwd="/root",
+                timeout=60,
+                task_id="test",
+                container_config={"sprites": {"tags": "prod, web"}},
+            )
+        call_kwargs = mock_env.call_args.kwargs
+        assert call_kwargs["labels"] == ["prod", "web"]
 
     def test_defaults_when_no_sprites_config(self):
         import importlib
