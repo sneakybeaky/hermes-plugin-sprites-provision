@@ -8,17 +8,21 @@ requires_env:
 python_deps:
   - spec: sprites-py>=0.7.0,<0.8
     install_hint: |
-      The Hermes venv is root-owned and read-only. Install with:
+      The Hermes venv is root-owned and read-only. Install to the
+      lazy-packages target (NOT python-packages) so Hermes finds it
+      at startup via activate_durable_lazy_target():
         uv pip install --python /opt/hermes/.venv/bin/python3 \
-          --target /opt/data/.hermes/python-packages \
+          --target /opt/data/lazy-packages \
           --no-deps 'sprites-py>=0.7.0,<0.8'
-      Then add to /opt/data/.env:
-        PYTHONPATH=/opt/data/.hermes/python-packages:/opt/data/plugins/sprites
+      A restart (from the Nous portal) is required for the running
+      Hermes process to pick up the new package.
 post_install: |
-  1. Install sprites-py SDK (see python_deps above).
-  2. Set PYTHONPATH in /opt/data/.env to include the python-packages dir
-     and the plugin dir.
-  3. Set SPRITES_TOKEN in /opt/data/.env (get one at sprites.dev/account).
-  4. Run: hermes config set terminal.backend sprites
-  5. Optional: configure terminal.sprites.* in config.yaml for tags/provisioning.
-  6. Start a new session for changes to take effect.
+  1. Install sprites-py SDK to /opt/data/lazy-packages (see python_deps above).
+     This is the HERMES_LAZY_INSTALL_TARGET that Hermes reads at startup
+     via activate_durable_lazy_target(). Do NOT use /opt/data/.hermes/python-packages
+     or rely on PYTHONPATH in .env -- the runtime does not read it.
+  2. Set SPRITES_TOKEN in /opt/data/.env (get one at sprites.dev/account).
+  3. Run: hermes config set terminal.backend sprites
+  4. Optional: configure terminal.sprites.* in config.yaml for tags/provisioning.
+  5. Restart Hermes from the Nous portal (or start a new session) so
+     activate_durable_lazy_target() picks up the SDK.

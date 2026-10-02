@@ -13,12 +13,16 @@ hermes plugins install sneakybeaky/hermes-plugin-sprites-provision --enable
 
 ### 1. Install the sprites-py SDK
 
-The Hermes venv is root-owned and read-only. Install with `uv pip --target`:
+The Hermes venv is root-owned and read-only. Install to the
+**lazy-packages** target (NOT python-packages) — this is the
+`HERMES_LAZY_INSTALL_TARGET` that Hermes reads at startup via
+`activate_durable_lazy_target()`. Do NOT use `/opt/data/.hermes/python-packages`
+or rely on `PYTHONPATH` in `.env` — the runtime does not read it.
 
 ```bash
-mkdir -p /opt/data/.hermes/python-packages
+mkdir -p /opt/data/lazy-packages
 uv pip install --python /opt/hermes/.venv/bin/python3 \
-  --target /opt/data/.hermes/python-packages \
+  --target /opt/data/lazy-packages \
   --no-deps \
   'sprites-py>=0.7.0,<0.8'
 ```
@@ -29,17 +33,15 @@ copies and version conflicts with the venv's exact-pinned deps.
 
 Verify:
 ```bash
-PYTHONPATH=/opt/data/.hermes/python-packages \
+PYTHONPATH=/opt/data/lazy-packages \
   /opt/hermes/.venv/bin/python3 -c "import sprites; print('OK')"
 ```
 
-### 2. Set PYTHONPATH in .env
+**A restart is required** — the running Hermes process only reads
+`/opt/data/lazy-packages` at startup via `activate_durable_lazy_target()`.
+Restart from the Nous portal (or start a new session) after installing.
 
-```bash
-echo 'PYTHONPATH=/opt/data/.hermes/python-packages:/opt/data/plugins/sprites' >> /opt/data/.env
-```
-
-### 3. Set the token
+### 2. Set the token
 
 ```bash
 echo 'SPRITES_TOKEN=<your-token>' >> /opt/data/.env
@@ -48,13 +50,13 @@ echo 'SPRITES_TOKEN=<your-token>' >> /opt/data/.env
 Get a token at https://sprites.dev/account. A Restricted Token with
 `prefix=hermes` is recommended for CI/shared use.
 
-### 4. Set the terminal backend
+### 3. Set the terminal backend
 
 ```bash
 hermes config set terminal.backend sprites
 ```
 
-### 5. (Optional) Configure tagging and provisioning
+### 4. (Optional) Configure tagging and provisioning
 
 Add to `config.yaml` (or use `hermes config set`):
 
@@ -70,7 +72,7 @@ terminal:
     provision_timeout: 600
 ```
 
-### 6. Verify
+### 5. Verify
 
 ```bash
 hermes plugins doctor sprites

@@ -98,10 +98,12 @@ class SpritesProvider(TerminalEnvironmentProvider):
         logger = logging.getLogger(__name__)
         if not _sdk_installed():
             logger.error(
-                "sprites-py SDK is required. On hosted Hermes (read-only venv), install with:\n"
-                "  uv pip install --python /opt/hermes/.venv/bin/python3 "
-                "--target /opt/data/.hermes/python-packages --no-deps '%s'\n"
-                "Then ensure PYTHONPATH includes /opt/data/.hermes/python-packages in /opt/data/.env",
+                "sprites-py SDK is required. On hosted Hermes (read-only venv), "
+                "install to the lazy-packages target (NOT python-packages): "
+                "uv pip install --python /opt/hermes/.venv/bin/python3 "
+                "--target /opt/data/lazy-packages --no-deps '%s'. "
+                "Restart Hermes from the Nous portal so activate_durable_lazy_target() "
+                "picks up the new package at startup.",
                 _SPRITES_SPEC,
             )
             return False
@@ -130,10 +132,10 @@ class SpritesProvider(TerminalEnvironmentProvider):
             "",
             "Install the sprites-py SDK (v0.7+ required for labels/update):",
             "  uv pip install --python /opt/hermes/.venv/bin/python3",
-            "    --target /opt/data/.hermes/python-packages --no-deps",
+            "    --target /opt/data/lazy-packages --no-deps",
             "    'sprites-py>=0.7.0,<0.8'",
-            "Add to /opt/data/.env:",
-            "  PYTHONPATH=/opt/data/.hermes/python-packages:/opt/data/plugins/sprites",
+            "  (lazy-packages is the HERMES_LAZY_INSTALL_TARGET read at startup)",
+            "  (Do NOT use python-packages or PYTHONPATH in .env -- runtime ignores it)",
             "",
             "Get a token at: https://sprites.dev/account",
             "Tip: mint a Restricted Token with prefix=hermes to scope it to",
