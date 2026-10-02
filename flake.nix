@@ -57,7 +57,7 @@
           shellHook = ''
             # Set PYTHONPATH first so the import check below can see a
             # previously-installed sprites-py and skip re-installing.
-            export PYTHONPATH="$PWD/.nix-pkgs:${hermes-agent-src.outPath}:$PYTHONPATH"
+            export PYTHONPATH="$PWD:$PWD/.nix-pkgs:${hermes-agent-src.outPath}:$PYTHONPATH"
 
             # sprites-py is not in nixpkgs. Install it via pip --no-deps
             # --target into a project-local dir that persists on the
