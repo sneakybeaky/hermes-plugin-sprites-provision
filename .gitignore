@@ -18,5 +18,3 @@ build/
 
 # OS
 .DS_Store
-
-.direnv

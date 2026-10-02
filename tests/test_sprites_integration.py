@@ -98,6 +98,7 @@ class TestProvisioningIntegration:
 
     def _make_env(self, unique_name, **prov_kwargs):
         from sprites_environment import SpritesEnvironment
+        from sprites.exceptions import SpriteError
         env = SpritesEnvironment.__new__(SpritesEnvironment)
         env._provision_script = prov_kwargs.get("provision_script")
         env._provision_inline = prov_kwargs.get("provision_inline")
@@ -108,7 +109,11 @@ class TestProvisioningIntegration:
         env._was_created = True
 
         client = SpritesClient(token=_TOKEN, timeout=60)
-        env._sprite = client.create_sprite(unique_name)
+        # If the sprite already exists (409), get it instead of creating.
+        try:
+            env._sprite = client.create_sprite(unique_name)
+        except SpriteError:
+            env._sprite = client.get_sprite(unique_name)
         env._fs = env._sprite.filesystem("/")
         env._client = client
         return env
@@ -201,7 +206,7 @@ class TestEndToEndIntegration:
                     task_id=unique_name,
                     labels=["e2e-test", "hermes"],
                     auto_tags=False,
-                    provision_inline='echo "e2e provision ok" > /root/.hermes/e2e-marker',
+                    provision_inline='mkdir -p $HOME/.hermes && echo "e2e provision ok" > $HOME/.hermes/e2e-marker',
                     provision_timeout=120,
                 )
 
@@ -210,7 +215,7 @@ class TestEndToEndIntegration:
             assert "e2e-test" in refetched.labels, f"labels: {refetched.labels}"
             assert "hermes" in refetched.labels
 
-            cmd = env._sprite.command("bash", "-c", "cat /root/.hermes/e2e-marker", timeout=15)
+            cmd = env._sprite.command("bash", "-c", f"cat {env._remote_home}/.hermes/e2e-marker", timeout=15)
             output = cmd.combined_output().decode().strip()
             assert "e2e provision ok" in output, f"provision output: {output}"
         finally:
@@ -288,7 +293,7 @@ nix --version
 
             # Verify the .provisioned marker exists (provisioning completed).
             marker_cmd = env._sprite.command(
-                "bash", "-c", "cat /root/.hermes/.provisioned", timeout=10,
+                "bash", "-c", f"cat {env._remote_home}/.hermes/.provisioned", timeout=10,
             )
             marker = marker_cmd.combined_output().decode().strip()
             assert "provisioned" in marker
