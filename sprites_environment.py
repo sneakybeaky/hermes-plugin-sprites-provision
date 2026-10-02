@@ -511,7 +511,7 @@ class SpritesEnvironment(BaseEnvironment):
         output = b""
         try:
             cmd = self._sprite.command(
-                "bash", "-l", "-c", remote_script, timeout=cmd_timeout,
+                "bash", "-l", remote_script, timeout=cmd_timeout,
             )
             output = cmd.combined_output()
         except ExitError as e:
