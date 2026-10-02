@@ -194,6 +194,37 @@ def _ephemeral_sprite_name(task_id: str) -> str:
     return _bounded_name(f"eph-{display}", nonce)
 
 
+def _resolve_labels(
+    labels: list[str] | None,
+    auto_tags: bool,
+    task_id: str,
+) -> list[str]:
+    """Compute the final label set for a sprite.
+
+    Combines user-configured static labels with auto-derived tags (if
+    ``auto_tags`` is True). Labels are sanitized (stripped, non-empty,
+    de-duplicated preserving order).
+    """
+    result = list(labels or [])
+    if auto_tags:
+        result.append("hermes")
+        task_slug = _collapse_slug(task_id)
+        if task_slug and task_slug != "default":
+            result.append(f"task-{task_slug}")
+        profile = _resolve_profile_identity()
+        if profile:
+            result.append(f"profile-{_collapse_slug(profile)}")
+    seen: set[str] = set()
+    clean: list[str] = []
+    for label in result:
+        label = (label or "").strip()
+        if label and label not in seen:
+            seen.add(label)
+            clean.append(label)
+    return clean
+
+
+
 class SpritesEnvironment(BaseEnvironment):
     """Sprites backend: stateful cloud sandboxes on Fly.io.
 
@@ -211,6 +242,12 @@ class SpritesEnvironment(BaseEnvironment):
         timeout: int = 60,
         persistent_filesystem: bool = True,
         task_id: str = "default",
+        labels: list[str] | None = None,
+        auto_tags: bool = False,
+        provision_script: str | None = None,
+        provision_inline: str | None = None,
+        provision_best_effort: bool = False,
+        provision_timeout: int = 600,
     ):
         requested_cwd = cwd
         super().__init__(cwd=cwd, timeout=timeout)
@@ -248,6 +285,12 @@ class SpritesEnvironment(BaseEnvironment):
         self._task_id = task_id
         self._lock = threading.Lock()
         self._sprite = None
+        self._desired_labels = _resolve_labels(labels, auto_tags, task_id)
+        self._provision_script = provision_script
+        self._provision_inline = provision_inline
+        self._provision_best_effort = provision_best_effort
+        self._provision_timeout = provision_timeout
+        self._was_created = False
 
         # Sprites does not yet honor SpriteConfig sizing knobs (cpu / ram /
         # storage / region) — sandboxes get default sizing. We omit SpriteConfig
@@ -262,6 +305,7 @@ class SpritesEnvironment(BaseEnvironment):
                     "Sprites: resumed existing sprite %s for task %s",
                     self._sprite.name, task_id,
                 )
+                self._reconcile_labels()
             except NotFoundError:
                 # Cross-process first-use race: two processes can both see
                 # 404 here; one create wins and the other gets a duplicate-
@@ -270,11 +314,15 @@ class SpritesEnvironment(BaseEnvironment):
                 # error if the Sprite genuinely does not exist (a real
                 # create failure, not a race).
                 try:
-                    self._sprite = self._client.create_sprite(sprite_name)
-                    logger.info(
-                        "Sprites: created sprite %s for task %s",
-                        self._sprite.name, task_id,
+                    self._sprite = self._client.create_sprite(
+                        sprite_name,
+                        labels=self._desired_labels or None,
                     )
+                    logger.info(
+                        "Sprites: created sprite %s for task %s (labels=%s)",
+                        self._sprite.name, task_id, self._desired_labels,
+                    )
+                    self._was_created = True
                 except SpriteError as create_err:
                     try:
                         self._sprite = self._client.get_sprite(sprite_name)
@@ -283,6 +331,8 @@ class SpritesEnvironment(BaseEnvironment):
                             "by another process (task %s)",
                             self._sprite.name, task_id,
                         )
+                        self._reconcile_labels()
+                        self._was_created = True
                     except NotFoundError:
                         raise create_err
         else:
@@ -295,11 +345,15 @@ class SpritesEnvironment(BaseEnvironment):
             # constructor only ever creates.
             sprite_name = _ephemeral_sprite_name(task_id)
             self._sprite_name = sprite_name
-            self._sprite = self._client.create_sprite(sprite_name)
-            logger.info(
-                "Sprites: created ephemeral sprite %s for task %s",
-                self._sprite.name, task_id,
+            self._sprite = self._client.create_sprite(
+                sprite_name,
+                labels=self._desired_labels or None,
             )
+            logger.info(
+                "Sprites: created ephemeral sprite %s for task %s (labels=%s)",
+                self._sprite.name, task_id, self._desired_labels,
+            )
+            self._was_created = True
 
         # Detect remote home dir for .hermes sync target.
         self._remote_home = "/root"
@@ -321,6 +375,13 @@ class SpritesEnvironment(BaseEnvironment):
             delete_fn=self._sprite_delete,
         )
         self._sync_manager.sync(force=True)
+
+        # First-creation provisioning: runs only when the sprite was just
+        # created (not resumed). Guarded by a marker file inside the sprite
+        # so the adopt-race loser does not double-provision.
+        if self._was_created:
+            self._provision_sprite()
+
         self.init_session()
 
     # ------------------------------------------------------------------
@@ -346,6 +407,146 @@ class SpritesEnvironment(BaseEnvironment):
         """
         for rp in remote_paths:
             (self._fs / rp).unlink(missing_ok=True)
+
+    # ------------------------------------------------------------------
+    # Label reconciliation
+    # ------------------------------------------------------------------
+
+    def _reconcile_labels(self) -> None:
+        """Merge desired labels into an existing sprite's label set.
+
+        Called on resume (and on adopt-race) so that labels added to the
+        config after a sprite was first created are propagated via
+        ``sprite.update(labels=...)``.  Existing labels on the sprite are
+        preserved -- this is additive, never destructive.
+        """
+        if not self._desired_labels:
+            return
+        try:
+            existing = set(self._sprite.labels or [])
+        except Exception:
+            existing = set()
+        desired = set(self._desired_labels)
+        missing = desired - existing
+        if not missing:
+            return
+        merged = list(existing | desired)
+        try:
+            self._sprite = self._sprite.update(labels=merged)
+            logger.info(
+                "Sprites: reconciled labels on %s: added %s",
+                self._sprite.name, sorted(missing),
+            )
+        except Exception as e:
+            logger.warning(
+                "Sprites: label reconciliation failed on %s: %s",
+                self._sprite_name, e,
+            )
+
+    # ------------------------------------------------------------------
+    # First-creation provisioning
+    # ------------------------------------------------------------------
+
+    _PROVISION_MARKER = ".hermes/.provisioned"
+
+    def _provision_sprite(self) -> None:
+        """Run the provisioning script inside the sprite (first creation).
+
+        Only fires when the sprite was just created (``self._was_created``).
+        A marker file inside the sprite guards against double-provisioning
+        when two processes race on first-use create and one adopts the
+        other's sprite.
+
+        Failure policy: fail-fast by default (raise from ``__init__`` so the
+        environment never reports ready on a half-provisioned sprite).
+        When ``self._provision_best_effort`` is True, failures are logged
+        as warnings instead.
+        """
+        script_path = self._provision_script
+        script_inline = self._provision_inline
+        if not script_path and not script_inline:
+            return
+
+        # Guard: marker file means another process already provisioned.
+        marker_path = f"{self._remote_home}/{self._PROVISION_MARKER}"
+        try:
+            (self._fs / marker_path.lstrip("/")).read_text()
+            logger.info(
+                "Sprites: provision marker found on %s, skipping",
+                self._sprite.name,
+            )
+            return
+        except Exception:
+            pass  # marker absent -- proceed
+
+        # Resolve script content.
+        if script_path:
+            try:
+                script_content = Path(script_path).read_text()
+            except Exception as e:
+                msg = f"provision script not readable: {script_path}: {e}"
+                if self._provision_best_effort:
+                    logger.warning("Sprites: %s", msg)
+                    return
+                raise RuntimeError(msg) from e
+        else:
+            script_content = script_inline
+
+        # Upload the script into the sprite.
+        remote_script = f"{self._remote_home}/.hermes/provision.sh"
+        remote = self._fs / remote_script.lstrip("/")
+        remote.parent.mkdir(parents=True, exist_ok=True)
+        remote.write_bytes(script_content.encode())
+
+        # Execute the script with a bounded timeout.
+        logger.info(
+            "Sprites: running provisioning script on %s (timeout=%ss)",
+            self._sprite.name, self._provision_timeout,
+        )
+        from sprites.exceptions import ExitError
+        from sprites.exceptions import TimeoutError as SpritesTimeout
+
+        cmd_timeout = float(self._provision_timeout)
+        exit_code = 0
+        output = b""
+        try:
+            cmd = self._sprite.command(
+                "bash", "-l", "-c", remote_script, timeout=cmd_timeout,
+            )
+            output = cmd.combined_output()
+        except ExitError as e:
+            buf = (e.stdout or b"") + (e.stderr or b"")
+            output = buf
+            exit_code = e.exit_code() if callable(getattr(e, "exit_code", None)) else 1
+        except SpritesTimeout:
+            output = f"provisioning timed out after {cmd_timeout}s\n".encode()
+            exit_code = 124
+
+        decoded = output.decode("utf-8", errors="replace")
+        if exit_code == 0:
+            # Write the marker so future sessions / race-adopters skip.
+            try:
+                (self._fs / marker_path.lstrip("/")).write_text("provisioned\n")
+            except Exception as e:
+                logger.warning(
+                    "Sprites: could not write provision marker on %s: %s",
+                    self._sprite.name, e,
+                )
+            logger.info(
+                "Sprites: provisioning completed on %s",
+                self._sprite.name,
+            )
+            if decoded.strip():
+                logger.debug("Sprites: provision output:\n%s", decoded)
+        else:
+            msg = (
+                f"provisioning script failed on {self._sprite.name} "
+                f"(exit {exit_code}):\n{decoded}"
+            )
+            if self._provision_best_effort:
+                logger.warning("Sprites: %s", msg)
+            else:
+                raise RuntimeError(msg)
 
     # ------------------------------------------------------------------
     # Execution

@@ -153,6 +153,16 @@ class SpritesProvider(TerminalEnvironmentProvider):
             "Sprite stays alive across sessions; its ext4 filesystem is the authoritative store"
             if persistent else "Sprite is deleted on cleanup (ephemeral)",
         ))
+        rows.append((
+            True,
+            "Sprites tagging",
+            "supported (configure via terminal.sprites.tags)",
+        ))
+        rows.append((
+            True,
+            "Sprites provisioning",
+            "supported (configure via terminal.sprites.provision_script or provision_inline)",
+        ))
         return rows
 
     def create_environment(self, *, cwd, timeout, task_id="default",
@@ -165,11 +175,23 @@ class SpritesProvider(TerminalEnvironmentProvider):
             from sprites_environment import SpritesEnvironment
 
         cc = container_config or {}
+        # terminal.sprites.* config subsection (falls back to flat keys
+        # in container_config for older config-bridge versions).
+        sc = cc.get("sprites", {})
+        tags = sc.get("tags") or cc.get("sprites_tags")
+        auto_tags = sc.get("auto_tags", cc.get("sprites_auto_tags", False))
+
         return SpritesEnvironment(
             cwd=cwd,
             timeout=timeout,
             persistent_filesystem=cc.get("container_persistent", True),
             task_id=task_id,
+            labels=tags,
+            auto_tags=auto_tags,
+            provision_script=sc.get("provision_script") or cc.get("sprites_provision_script"),
+            provision_inline=sc.get("provision_inline") or cc.get("sprites_provision_inline"),
+            provision_best_effort=sc.get("provision_best_effort", cc.get("sprites_provision_best_effort", False)),
+            provision_timeout=sc.get("provision_timeout", cc.get("sprites_provision_timeout", 600)),
         )
 
 
