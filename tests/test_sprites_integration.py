@@ -109,6 +109,17 @@ class TestProvisioningIntegration:
         env._was_created = True
 
         client = SpritesClient(token=_TOKEN, timeout=60)
+        # Detect real $HOME (sprites use /home/sprite, not /root).
+        try:
+            from sprites.exceptions import SpriteError as _SE
+            home_cmd = client.get_sprite(unique_name).command(
+                "bash", "-c", "echo $HOME", timeout=15,
+            )
+            home = home_cmd.combined_output().decode().strip()
+            if home:
+                env._remote_home = home
+        except Exception:
+            pass
         # If the sprite already exists (409), get it instead of creating.
         try:
             env._sprite = client.create_sprite(unique_name)
@@ -142,19 +153,19 @@ class TestProvisioningIntegration:
 
         env = self._make_env(
             unique_name,
-            provision_inline='echo "SHOULD NOT RUN" > /root/.hermes/should-not-exist',
+            provision_inline='echo "SHOULD NOT RUN" > $HOME/.hermes/should-not-exist',
         )
         env._provision_sprite()
 
         # Second run: marker present, should skip.
         env2 = self._make_env(
             unique_name,
-            provision_inline='echo "SHOULD NOT RUN" > /root/.hermes/should-not-exist',
+            provision_inline='echo "SHOULD NOT RUN" > $HOME/.hermes/should-not-exist',
         )
         env2._provision_sprite()
 
         cmd = env._sprite.command(
-            "bash", "-c", "test -f /root/.hermes/should-not-exist && echo EXISTS || echo ABSENT",
+            "bash", "-c", f"test -f {env._remote_home}/.hermes/should-not-exist && echo EXISTS || echo ABSENT",
             timeout=10,
         )
         result = cmd.combined_output().decode().strip()
