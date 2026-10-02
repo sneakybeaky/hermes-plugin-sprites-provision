@@ -153,14 +153,14 @@ class TestProvisioningIntegration:
 
         env = self._make_env(
             unique_name,
-            provision_inline='echo "SHOULD NOT RUN" > $HOME/.hermes/should-not-exist',
+            provision_inline='mkdir -p $HOME/.hermes && echo "SHOULD NOT RUN" > $HOME/.hermes/should-not-exist',
         )
         env._provision_sprite()
 
         # Second run: marker present, should skip.
         env2 = self._make_env(
             unique_name,
-            provision_inline='echo "SHOULD NOT RUN" > $HOME/.hermes/should-not-exist',
+            provision_inline='mkdir -p $HOME/.hermes && echo "SHOULD NOT RUN" > $HOME/.hermes/should-not-exist',
         )
         env2._provision_sprite()
 
