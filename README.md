@@ -89,7 +89,7 @@ nix develop -c pytest tests/ -m integration
 
 ## Attribution
 
-The Sprites environment was authored by Kyle McLaren (@kylemclaren, Fly.io) as hermes-agent PR #30112 and hardened through PR #93523. Extracted to a standalone plugin by Nous Research. Tagging, provisioning, and Nix devshell added in this fork.
+The Sprites environment was authored by Kyle McLaren (@kylemclaren, Fly.io) and extracted to a standalone plugin by Nous Research. Tagging, provisioning, and Nix devshell added by Jon Barber (@sneakybeaky) in this fork.
 
 ## License
 

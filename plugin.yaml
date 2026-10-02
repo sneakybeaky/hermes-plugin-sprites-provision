@@ -1,7 +1,7 @@
 name: sprites
 version: 1.1.0
 description: Sprites terminal backend with checkpoint & restore, tagging, and first-creation provisioning
-author: Kyle McLaren (@kylemclaren) / Nous Research
+author: Jon Barber (@sneakybeaky)
 kind: backend
 requires_env:
   - SPRITES_TOKEN
