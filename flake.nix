@@ -19,7 +19,7 @@
 
         # Lightweight deps the plugin's import chain pulls from hermes-agent
         # (we put the source on PYTHONPATH rather than pip-installing the
-        # whole exact-pinned hermes-agent tree, which is gated to py3.14).
+        # whole exact-pinned hermes-agent tree).
         hermesRuntimeDeps = with python.pkgs; [
           httpx
           pydantic
