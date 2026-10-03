@@ -3,11 +3,19 @@
 This is a Hermes Agent terminal backend plugin that adds tagging and
 first-creation provisioning to the Sprites (Fly.io) backend.
 
+> On hosted Hermes instances `hermes` is **not on `PATH`** — use
+> `/opt/hermes/.venv/bin/hermes` in place of `hermes` below.
+
 ## One-command install
 
 ```bash
 hermes plugins install sneakybeaky/hermes-plugin-sprites-provision --enable
 ```
+
+`plugin.yaml` declares `python_dependencies: sprites-py>=0.7.0,<0.8`, so the
+installer places the SDK in `HERMES_LAZY_INSTALL_TARGET` automatically. Step 1
+below is the manual fallback for builds that don't, and is required before the
+first run in any case.
 
 ## Post-install steps
 
@@ -58,18 +66,33 @@ hermes config set terminal.backend sprites
 
 ### 4. (Optional) Configure tagging and provisioning
 
-Add to `config.yaml` (or use `hermes config set`):
+Plugin settings live under `plugins.entries.sprites.settings.*`. This is the
+authoritative namespace: the config editor preserves it across round-trips,
+whereas `terminal.sprites.*` is not in the terminal config schema and can be
+stripped on save.
+
+```bash
+hermes config set plugins.entries.sprites.settings.tags '["prod", "web"]'
+hermes config set plugins.entries.sprites.settings.auto_tags true
+hermes config set plugins.entries.sprites.settings.provision_script /path/to/provision.sh
+hermes config set plugins.entries.sprites.settings.provision_best_effort false
+hermes config set plugins.entries.sprites.settings.provision_timeout 600
+```
+
+Or edit `config.yaml` directly:
 
 ```yaml
-terminal:
-  sprites:
-    tags: ["prod", "web"]
-    auto_tags: true
-    provision_script: /path/to/provision.sh
-    # provision_inline: |
-    #   echo "provisioning..."
-    provision_best_effort: false
-    provision_timeout: 600
+plugins:
+  entries:
+    sprites:
+      settings:
+        tags: ["prod", "web"]
+        auto_tags: true
+        provision_script: /path/to/provision.sh
+        # provision_inline: |
+        #   echo "provisioning..."
+        provision_best_effort: false
+        provision_timeout: 600
 ```
 
 ### 5. Verify
@@ -79,4 +102,4 @@ hermes plugins doctor sprites
 hermes config get terminal.backend
 ```
 
-Start a new session for config changes to take effect.
+Start a new session (or restart the instance) for config changes to take effect.

@@ -11,19 +11,35 @@ Built on top of `NousResearch/hermes-plugin-sprites` (with PR #3 compat fixes), 
 ## Install
 
 ```bash
-# 1. Clone into the Hermes plugins dir
-git clone <this-repo> ~/.hermes/plugins/sprites
+# 1. Install + enable the plugin
+hermes plugins install sneakybeaky/hermes-plugin-sprites-provision --enable
 
-# 2. Install the SDK (v0.7+ required for labels/update support)
-pip install 'sprites-py>=0.7.0,<0.8'
+# 2. Install the sprites-py SDK into the lazy target Hermes reads at startup.
+#    On hosted Hermes the venv is read-only and PYTHONPATH in .env is NOT read
+#    by the runtime, so the SDK must live in HERMES_LAZY_INSTALL_TARGET.
+mkdir -p /opt/data/lazy-packages
+uv pip install --python /opt/hermes/.venv/bin/python3 \
+  --target /opt/data/lazy-packages \
+  --no-deps 'sprites-py>=0.7.0,<0.8'
 
-# 3. Enable + select
-hermes plugins enable sprites
+# 3. Select the backend
 hermes config set terminal.backend sprites
 
 # 4. Token (get one at https://sprites.dev/account)
-echo 'SPRITES_TOKEN=...' >> ~/.hermes/.env
+echo 'SPRITES_TOKEN=...' >> /opt/data/.env
+
+# 5. Restart Hermes (from the Nous portal) or start a new session so
+#    activate_durable_lazy_target() picks up the SDK.
 ```
+
+`plugin.yaml` declares `python_dependencies: sprites-py>=0.7.0,<0.8`, so builds
+that honor the field install the SDK into the lazy target automatically during
+`hermes plugins install --enable`; step 2 is the manual fallback.
+
+> **Hosted Hermes paths.** The commands above target a hosted Hermes instance
+> (`/opt/data` data dir, venv under `/opt/hermes`). There, `hermes` is not on
+> `PATH` — use `/opt/hermes/.venv/bin/hermes`. On a plain install, substitute
+> `~/.hermes` for `/opt/data` and use `hermes` directly.
 
 ## Configuration
 
