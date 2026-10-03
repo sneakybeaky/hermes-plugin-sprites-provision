@@ -9,28 +9,16 @@ requires_env:
     description: "Sprites API token — get one at sprites.dev/account. A Restricted Token with prefix=hermes is recommended for CI/shared use."
     url: "https://sprites.dev/account"
     secret: true
-python_deps:
-  - spec: sprites-py>=0.7.0,<0.8
-    install_hint: |
-      The Hermes venv is root-owned and read-only. Install to the
-      lazy-packages target (NOT python-packages) so Hermes finds it
-      at startup via activate_durable_lazy_target():
-        uv pip install --python /opt/hermes/.venv/bin/python3 \
-          --target /opt/data/lazy-packages \
-          --no-deps 'sprites-py>=0.7.0,<0.8'
-      A restart (from the Nous portal) is required for the running
-      Hermes process to pick up the new package.
-post_install: |
-  1. Install sprites-py SDK to /opt/data/lazy-packages (see python_deps above).
-     This is the HERMES_LAZY_INSTALL_TARGET that Hermes reads at startup
-     via activate_durable_lazy_target(). Do NOT use /opt/data/.hermes/python-packages
-     or rely on PYTHONPATH in .env -- the runtime does not read it.
-  2. Set SPRITES_TOKEN in /opt/data/.env (get one at sprites.dev/account).
-  3. Run: hermes config set terminal.backend sprites
-  4. Optional: configure plugin settings via `hermes config set` or the Desktop
-     Plugins settings form (see config_schema below).
-  5. Restart Hermes from the Nous portal (or start a new session) so
-     activate_durable_lazy_target() picks up the SDK.
+# The manifest field Hermes reads is `python_dependencies` (a list of pip
+# requirement strings) — NOT `python_deps`, which is an unknown key and is
+# silently ignored by the manifest parser (it only logs a warning).
+# `hermes plugins install/enable` installs these via
+# tools.lazy_deps.install_specs into HERMES_LAZY_INSTALL_TARGET
+# (/opt/data/lazy-packages on hosted Hermes) — never into the read-only venv.
+# Install hints belong in the docs (README.md / AGENTS.md); the parser has no
+# `post_install` or `install_hint` field.
+python_dependencies:
+  - "sprites-py>=0.7.0,<0.8"
 config_schema:
   tags:
     type: list
